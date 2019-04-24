@@ -6,14 +6,15 @@
  * This code is licensed under the GPL.
  */
 
-#include "sysbus.h"
-#include "devices.h"
-#include "arm-misc.h"
+#include "qemu/osdep.h"
+#include "hw/sysbus.h"
+#include "hw/devices.h"
+#include "hw/arm/arm.h"
 
 #define SYSC_FLASHCFG   (0x000)
 
 #define SYSC_PLL0CON    (0x080)
-#define SYSC_PLL0CFG    (0x084)    
+#define SYSC_PLL0CFG    (0x084)
 #define SYSC_PLL0STAT   (0x088)
 #define SYSC_PLL0FEED   (0x08C)
 
@@ -44,7 +45,11 @@
 #define SYSC_USBIntSt
 #define SYSC_DMAREQSEL
 #define SYSC_CLKOUTCFG  (0x1C8)
-        
+
+#define TYPE_LPC1768_SYSC "lpc1768,sysc"
+#define LPC1768_SYSC(obj) \
+    OBJECT_CHECK(Lpc1768SyscState, (obj), TYPE_LPC1768_SYSC)
+
 enum {
     SRCSEL_INTERNAL_CR,
     SRCSEL_MAIN_OSC,
@@ -85,17 +90,17 @@ static uint32_t get_pll0(Lpc1768SyscState *s)
 static void update_system_clock(Lpc1768SyscState *s)
 {
     if ((s->clk_select & 3) != SRCSEL_INTERNAL_CR) {
-        printf("unsupported clock source :%s\n", 
+        printf("unsupported clock source :%s\n",
                get_clock_name(s));
         printf("assuming that the system clock is at 100MHz\n");
         system_clock_scale = 100000000;
         return;
     }
-    
+
     system_clock_scale = get_pll0(s) / ((s->clk_config & 0xff) + 1);
 }
 
-static uint64_t lpc1768_sysc_read(void *opaque, target_phys_addr_t offset,
+static uint64_t lpc1768_sysc_read(void *opaque, hwaddr offset,
 		 		  unsigned size)
 {
     Lpc1768SyscState *s = (Lpc1768SyscState *)opaque;
@@ -121,7 +126,7 @@ static uint64_t lpc1768_sysc_read(void *opaque, target_phys_addr_t offset,
     return retval;
 }
 
-static void lpc1768_sysc_write(void *opaque, target_phys_addr_t offset,
+static void lpc1768_sysc_write(void *opaque, hwaddr offset,
                                uint64_t value, unsigned size)
 {
     Lpc1768SyscState *s = (Lpc1768SyscState *)opaque;
@@ -152,9 +157,9 @@ static const MemoryRegionOps lpc1768_sysc_mem_ops = {
 
 static int lpc1768_sysc_init(SysBusDevice *dev)
 {
-    Lpc1768SyscState *s = FROM_SYSBUS(Lpc1768SyscState, dev);
+    Lpc1768SyscState *s = LPC1768_SYSC(dev);
 
-    memory_region_init_io(&s->mmio, &lpc1768_sysc_mem_ops, s,
+    memory_region_init_io(&s->mmio, NULL, &lpc1768_sysc_mem_ops, s,
 		    	  "lpc1768_sysc-mmio", 0x1000);
     sysbus_init_mmio(dev, &s->mmio);
 
@@ -180,7 +185,7 @@ static void lpc1768_sysc_class_init(ObjectClass *klass, void *data)
 }
 
 static TypeInfo lpc1768_sysc_info = {
-    .name  = "lpc1768,sysc",
+    .name  = TYPE_LPC1768_SYSC,
     .parent  = TYPE_SYS_BUS_DEVICE,
     .instance_size  = sizeof(Lpc1768SyscState),
     .class_init  = &lpc1768_sysc_class_init,
