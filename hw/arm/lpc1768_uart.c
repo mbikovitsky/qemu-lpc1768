@@ -6,9 +6,12 @@
  * This code is licensed under the GPL.
  */
 
-#include "sysbus.h"
-#include "devices.h"
-#include "qemu-char.h"
+#include "qemu/osdep.h"
+#include "hw/sysbus.h"
+#include "hw/devices.h"
+#include "chardev/char.h"
+#include "chardev/char-fe.h"
+#include "cpu.h"
 
 //#define DEBUG_SERIAL
 #ifdef DEBUG_SERIAL
@@ -19,33 +22,37 @@ do { fprintf(stderr, "%s[%010d]:" fmt , __func__, ++dbg_cnt, ## __VA_ARGS__); } 
 #define DPRINTF(fmt, ...) do {} while(0)
 #endif
 
-#define UART_RBR_DLL            (0x00)   
-#define UART_THR_DLL            (0x00)   
-#define UART_IER_DLM            (0x04)   
-#define UART_IIR                (0x08)   
-#define UART_FCR                (0x08)   
-#define UART_LCR                (0x0C)   
-#define UART_MCR                (0x10)   
-#define UART_LSR                (0x14)   
-#define UART_MSR                (0x18)   
-#define UART_SCR                (0x1C)   
+#define UART_RBR_DLL            (0x00)
+#define UART_THR_DLL            (0x00)
+#define UART_IER_DLM            (0x04)
+#define UART_IIR                (0x08)
+#define UART_FCR                (0x08)
+#define UART_LCR                (0x0C)
+#define UART_MCR                (0x10)
+#define UART_LSR                (0x14)
+#define UART_MSR                (0x18)
+#define UART_SCR                (0x1C)
 
-#define UART_IER_RBR            (0x01)       
-#define UART_IER_THRE           (0x02)       
+#define UART_IER_RBR            (0x01)
+#define UART_IER_THRE           (0x02)
 #define UART_IIR_RDA            (2 << 1)
 #define UART_IIR_THRE           (1 << 1)
 
-#define UART_LCR_DLAB            (0x80)       
-#define UART_LCR_NP_8_1          (0x03)       
+#define UART_LCR_DLAB            (0x80)
+#define UART_LCR_NP_8_1          (0x03)
 #define UART_FCR_FIFO_DISABLE    (0x00)
 
 #define UART_LSR_RX_DATA_READY   (0x01)
 #define UART_LSR_TX_EMPTY        (0x20)
 #define UART_MCR_INT_ENABLE      (0x08)
 
+#define TYPE_LPC1768_UART "lpc1768,uart"
+#define LPC1768_UART(obj) \
+    OBJECT_CHECK(Lpc1768UartState, (obj), TYPE_LPC1768_UART)
+
 typedef struct {
     SysBusDevice busdev;
-    CharDriverState *chr;
+    CharBackend chr;
     MemoryRegion mmio;
     uint8_t fifo[32];
     uint32_t fifo_index;
@@ -79,7 +86,7 @@ static void lpc1768_uart_update(Lpc1768UartState *s)
         qemu_irq_pulse(s->irq);
 }
 
-static uint64_t lpc1768_uart_read(void *opaque, target_phys_addr_t offset,
+static uint64_t lpc1768_uart_read(void *opaque, hwaddr offset,
 				  unsigned size)
 {
     Lpc1768UartState *s = (Lpc1768UartState *)opaque;
@@ -110,7 +117,7 @@ static uint64_t lpc1768_uart_read(void *opaque, target_phys_addr_t offset,
         retval = s->lsr | UART_LSR_TX_EMPTY;
         break;
     default:
-        cpu_abort(cpu_single_env, "%s: Bad offset 0x%x\n", __func__, 
+        cpu_abort(CPU(ARM_CPU(first_cpu)), "%s: Bad offset 0x%x\n", __func__,
 			(int)offset);
     }
 
@@ -118,7 +125,7 @@ static uint64_t lpc1768_uart_read(void *opaque, target_phys_addr_t offset,
     return retval;
 }
 
-static void lpc1768_uart_write(void *opaque, target_phys_addr_t offset,
+static void lpc1768_uart_write(void *opaque, hwaddr offset,
                                uint64_t value, unsigned size)
 {
     Lpc1768UartState *s = (Lpc1768UartState *)opaque;
@@ -130,7 +137,7 @@ static void lpc1768_uart_write(void *opaque, target_phys_addr_t offset,
             s->dll = value;
         } else {
             uint8_t ch = value & 0xff;
-            qemu_chr_fe_write(s->chr, &ch, 1);
+            qemu_chr_fe_write(&s->chr, &ch, 1);
             s->iir |= UART_IIR_THRE;
             s->iir &= ~1;
             s->iir &= ~UART_IIR_THRE;
@@ -151,7 +158,7 @@ static void lpc1768_uart_write(void *opaque, target_phys_addr_t offset,
         s->lcr = value;
         break;
     default:
-        cpu_abort(cpu_single_env, "%s: Bad offset 0x%x\n", __func__, 
+        cpu_abort(CPU(ARM_CPU(first_cpu)), "%s: Bad offset 0x%x\n", __func__,
 			(int)offset);
     }
 }
@@ -189,7 +196,7 @@ static void lpc1768_uart_event(void *opaque, int event)
 
 static void lpc1768_uart_reset(DeviceState *d)
 {
-    Lpc1768UartState *s = container_of(d, Lpc1768UartState, busdev.qdev);
+    Lpc1768UartState *s = LPC1768_UART(d);
     /* defaults */
     s->dll = 0x01;
     s->dlm = 0x00;
@@ -204,21 +211,31 @@ static void lpc1768_uart_reset(DeviceState *d)
 
 static int lpc1768_uart_init(SysBusDevice *dev)
 {
-    Lpc1768UartState *s = FROM_SYSBUS(typeof(*s), dev);
+    Lpc1768UartState *s = LPC1768_UART(dev);
 
     sysbus_init_irq(dev, &s->irq);
-    memory_region_init_io(&s->mmio, &lpc1768_uart_mem_ops, s,
+    memory_region_init_io(&s->mmio, NULL, &lpc1768_uart_mem_ops, s,
 		    	  "lpc1768_uart-mmio", 0x1000);
     sysbus_init_mmio(dev, &s->mmio);
 
-    s->chr = qemu_char_get_next_serial();
-    if (s->chr) {
-        qemu_chr_add_handlers(s->chr, lpc1768_uart_can_rx, 
-                              lpc1768_uart_rx, lpc1768_uart_event, s);
-    }
-
     return 0;
 }
+
+static void lpc1768_uart_realize(DeviceState *dev, Error **errp)
+{
+    Lpc1768UartState *s = LPC1768_UART(dev);
+
+    qemu_chr_fe_set_handlers(&s->chr,
+                             lpc1768_uart_can_rx,
+                             lpc1768_uart_rx,
+                             lpc1768_uart_event,
+                             NULL, s, NULL, true);
+}
+
+static Property lpc1768_uart_properties[] = {
+    DEFINE_PROP_CHR("chardev", Lpc1768UartState, chr),
+    DEFINE_PROP_END_OF_LIST(),
+};
 
 static void lpc1768_uart_class_init(ObjectClass *klass, void *data)
 {
@@ -227,10 +244,12 @@ static void lpc1768_uart_class_init(ObjectClass *klass, void *data)
 
     k->init = lpc1768_uart_init;
     dc->reset = lpc1768_uart_reset;
+    dc->props = lpc1768_uart_properties;
+    dc->realize = lpc1768_uart_realize;
 }
 
 static TypeInfo lpc1768_uart_info = {
-    .name  = "lpc1768,uart",
+    .name  = TYPE_LPC1768_UART,
     .parent  = TYPE_SYS_BUS_DEVICE,
     .instance_size  = sizeof(Lpc1768UartState),
     .class_init  = &lpc1768_uart_class_init,
