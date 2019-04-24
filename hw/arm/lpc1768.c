@@ -6,53 +6,79 @@
  * This code is licensed under the GPL v2.
  */
 
-#include "sysbus.h"
-#include "arm-misc.h"
-#include "devices.h"
-#include "boards.h"
-#include "qemu-timer.h"
-#include "exec-memory.h"
+#include "qemu/osdep.h"
+#include "qapi/error.h"
+#include "hw/boards.h"
+#include "exec/address-spaces.h"
+#include "sysemu/sysemu.h"
+#include "hw/arm/armv7m.h"
+
+#define NUM_IRQ_LINES 64
+
+static
+void do_sys_reset(void *opaque, int n, int level)
+{
+    if (level) {
+        qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
+    }
+}
 
 static void lpc1768_common_init(const char *kernel_filename, const char *cpu_model)
 {
-    MemoryRegion *sysmem = get_system_memory();
+    DeviceState *nvic;
     MemoryRegion *ex_sram;
-    qemu_irq *pic;
     int sram_size;
     int flash_size;
 
-    flash_size = 512 * 1024;
-    sram_size  = 32 * 1024;
-    pic = armv7m_init(sysmem, flash_size, sram_size, 0x10000000,
-                      kernel_filename, cpu_model);
+    MemoryRegion *sram = g_new(MemoryRegion, 1);
+    MemoryRegion *flash = g_new(MemoryRegion, 1);
+    MemoryRegion *system_memory = get_system_memory();
+
+    flash_size = (512 * 1024) * 1024;
+    sram_size  = (32 * 1024) * 1024;
+
+    ///////////////////////////////////////////////////
+    /* Flash programming is done via the SCU, so pretend it is ROM.  */
+    memory_region_init_ram(flash, NULL, "lpc1768.flash", flash_size,
+                           &error_fatal);
+    memory_region_set_readonly(flash, true);
+    memory_region_add_subregion(system_memory, 0, flash);
+
+    memory_region_init_ram(sram, NULL, "lpc1768.sram", sram_size,
+                           &error_fatal);
+    memory_region_add_subregion(system_memory, 0x20000000, sram);
+
+    nvic = qdev_create(NULL, TYPE_ARMV7M);
+    qdev_prop_set_uint32(nvic, "num-irq", NUM_IRQ_LINES);
+    qdev_prop_set_string(nvic, "cpu-type", cpu_model);
+    object_property_set_link(OBJECT(nvic), OBJECT(system_memory),
+                                     "memory", &error_abort);
+    /* This will exit with an error if the user passed us a bad cpu_type */
+    qdev_init_nofail(nvic);
+
+    qdev_connect_gpio_out_named(nvic, "SYSRESETREQ", 0,
+                                qemu_allocate_irq(&do_sys_reset, NULL, 0));
+    ///////////////////////////////////////////////////
 
     sram_size = 16 * 1024 * 2; /* 2 blocks of 16 KiB */
     ex_sram = g_new(MemoryRegion, 1);
-    memory_region_init_ram(ex_sram, "armv7m.AHB-SRAM", sram_size);
-    memory_region_add_subregion(sysmem, 0x2007c000, ex_sram);
+    memory_region_init_ram(ex_sram, NULL, "armv7m.AHB-SRAM", sram_size, &error_fatal);
+    memory_region_add_subregion(system_memory, 0x2007c000, ex_sram);
 
-    sysbus_create_simple("lpc1768,uart", 0x4000C000, pic[5]); // 21 - (16) = 5
+    sysbus_create_simple("lpc1768,uart", 0x4000C000, qdev_get_gpio_in(nvic, 5)); // 21 - (16) = 5
     sysbus_create_simple("lpc1768,sysc", 0x400FC000, NULL);
 }
 
 /* FIXME: Figure out how to generate these from lpc1768_boards.  */
-static void lpc1768_generic_init(ram_addr_t ram_size,
-                     const char *boot_device,
-                     const char *kernel_filename, const char *kernel_cmdline,
-                     const char *initrd_filename, const char *cpu_model)
+static void lpc1768_generic_init(MachineState *machine)
 {
-    lpc1768_common_init(kernel_filename, cpu_model);
+    lpc1768_common_init(machine->kernel_filename, machine->cpu_type);
 }
 
-static QEMUMachine lpc1768_generic_machine = {
-    .name = "lpc1768_generic",
-    .desc = "LPC1768 Generic board",
-    .init = lpc1768_generic_init,
-};
-
-static void lpc1768_machine_init(void)
+static void lpc1768_machine_init(MachineClass *mc)
 {
-    qemu_register_machine(&lpc1768_generic_machine);
+    mc->desc = "LPC1768 Generic board";
+    mc->init = lpc1768_generic_init;
 }
 
-machine_init(lpc1768_machine_init);
+DEFINE_MACHINE("lpc1768_generic", lpc1768_machine_init)
