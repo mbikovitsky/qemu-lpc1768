@@ -209,16 +209,15 @@ static void lpc1768_uart_reset(DeviceState *d)
     s->fifo_index = 0;
 }
 
-static int lpc1768_uart_init(SysBusDevice *dev)
+static void lpc1768_uart_init(Object *obj)
 {
-    Lpc1768UartState *s = LPC1768_UART(dev);
+    Lpc1768UartState *s = LPC1768_UART(obj);
+    SysBusDevice *dev = SYS_BUS_DEVICE(obj);
 
     sysbus_init_irq(dev, &s->irq);
     memory_region_init_io(&s->mmio, NULL, &lpc1768_uart_mem_ops, s,
 		    	  "lpc1768_uart-mmio", 0x1000);
     sysbus_init_mmio(dev, &s->mmio);
-
-    return 0;
 }
 
 static void lpc1768_uart_realize(DeviceState *dev, Error **errp)
@@ -240,9 +239,7 @@ static Property lpc1768_uart_properties[] = {
 static void lpc1768_uart_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
 
-    k->init = lpc1768_uart_init;
     dc->reset = lpc1768_uart_reset;
     dc->props = lpc1768_uart_properties;
     dc->realize = lpc1768_uart_realize;
@@ -252,6 +249,7 @@ static TypeInfo lpc1768_uart_info = {
     .name  = TYPE_LPC1768_UART,
     .parent  = TYPE_SYS_BUS_DEVICE,
     .instance_size  = sizeof(Lpc1768UartState),
+    .instance_init = lpc1768_uart_init,
     .class_init  = &lpc1768_uart_class_init,
 };
 
