@@ -68,6 +68,8 @@ static void lpc1768_common_init(const char *kernel_filename, const char *cpu_mod
 
     sysbus_create_simple("lpc1768,uart", 0x4000C000, qdev_get_gpio_in(nvic, 5)); // 21 - (16) = 5
     sysbus_create_simple("lpc1768,sysc", 0x400FC000, NULL);
+
+    armv7m_load_kernel(ARM_CPU(first_cpu), kernel_filename, flash_size);
 }
 
 /* FIXME: Figure out how to generate these from lpc1768_boards.  */
