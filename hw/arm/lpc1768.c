@@ -11,6 +11,7 @@
 #include "hw/boards.h"
 #include "exec/address-spaces.h"
 #include "sysemu/sysemu.h"
+#include "hw/arm/arm.h"
 #include "hw/arm/armv7m.h"
 
 #define NUM_IRQ_LINES 64
@@ -79,6 +80,8 @@ static void lpc1768_machine_init(MachineClass *mc)
 {
     mc->desc = "LPC1768 Generic board";
     mc->init = lpc1768_generic_init;
+    // mc->ignore_memory_transaction_failures = true;
+    mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-m3");
 }
 
 DEFINE_MACHINE("lpc1768_generic", lpc1768_machine_init)
