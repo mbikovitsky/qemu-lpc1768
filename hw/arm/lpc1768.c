@@ -28,6 +28,7 @@ static void lpc1768_common_init(const char *kernel_filename, const char *cpu_mod
 {
     DeviceState *nvic;
     MemoryRegion *ex_sram;
+    MemoryRegion *pin_connect_block;
     int sram_size;
     int flash_size;
 
@@ -65,6 +66,12 @@ static void lpc1768_common_init(const char *kernel_filename, const char *cpu_mod
     ex_sram = g_new(MemoryRegion, 1);
     memory_region_init_ram(ex_sram, NULL, "armv7m.AHB-SRAM", sram_size, &error_fatal);
     memory_region_add_subregion(system_memory, 0x2007c000, ex_sram);
+
+    // HACK: This should probably be memory-mapped, so that we can do
+    // something intelligent with the pin values.
+    pin_connect_block = g_new(MemoryRegion, 1);
+    memory_region_init_ram(pin_connect_block, NULL, "lpc1768.pin-connect-block", 0x4000, &error_fatal);
+    memory_region_add_subregion(system_memory, 0x4002C000, pin_connect_block);
 
     sysbus_create_simple("lpc1768,uart", 0x4000C000, qdev_get_gpio_in(nvic, 5)); // 21 - (16) = 5
     sysbus_create_simple("lpc1768,sysc", 0x400FC000, NULL);
