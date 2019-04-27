@@ -36,7 +36,7 @@ static void lpc1768_common_init(const char *kernel_filename, const char *cpu_mod
     MemoryRegion *system_memory = get_system_memory();
 
     flash_size = (512 * 1024) * 1024;
-    sram_size  = (32 * 1024) * 1024;
+    sram_size  = (64 * 1024) * 1024;
 
     ///////////////////////////////////////////////////
     /* Flash programming is done via the SCU, so pretend it is ROM.  */
