@@ -26,6 +26,7 @@ do { fprintf(stderr, "%s[%010d]:" fmt , __func__, ++dbg_cnt, ## __VA_ARGS__); } 
 #define UART_THR_DLL            (0x00)
 #define UART_IER_DLM            (0x04)
 #define UART_IIR                (0x08)
+#define UART_FDR                (0x28)
 #define UART_FCR                (0x08)
 #define UART_LCR                (0x0C)
 #define UART_MCR                (0x10)
@@ -64,6 +65,8 @@ typedef struct {
     uint32_t lsr;
     uint32_t ier;
     uint32_t iir;
+
+    uint32_t fdr;
 
     uint32_t irq_level;
     qemu_irq irq;
@@ -109,6 +112,15 @@ static uint64_t lpc1768_uart_read(void *opaque, hwaddr offset,
             retval = s->ier;
         }
         break;
+    case UART_FDR:
+        if (s->lcr & UART_LCR_DLAB) {
+            retval = s->fdr;
+        } else {
+            cpu_abort(CPU(ARM_CPU(first_cpu)),
+                      "%s: Reading from FDR when DLAB is not set\n",
+                      __func__);
+        }
+        break;
     case UART_IIR:
         retval = s->iir;
         s->iir = 1;
@@ -152,6 +164,15 @@ static void lpc1768_uart_write(void *opaque, hwaddr offset,
             s->dlm = value;
         } else {
             s->ier = value;
+        }
+        break;
+    case UART_FDR:
+        if (s->lcr & UART_LCR_DLAB) {
+            s->fdr = value;
+        } else {
+            cpu_abort(CPU(ARM_CPU(first_cpu)),
+                      "%s: Writing to FDR when DLAB is not set\n",
+                      __func__);
         }
         break;
     case UART_FCR:
@@ -208,6 +229,9 @@ static void lpc1768_uart_reset(DeviceState *d)
     s->fcr = 0x00;
     s->lcr = 0x00;
     s->lsr = 0x60;
+
+    s->fdr = 0x10;  // https://www.nxp.com/docs/en/user-guide/UM10360.pdf
+
     memset(s->fifo, 0, sizeof(s->fifo));
     s->fifo_index = 0;
 }
