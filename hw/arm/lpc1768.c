@@ -35,19 +35,19 @@ static void lpc1768_common_init(const char *kernel_filename, const char *cpu_mod
     MemoryRegion *flash = g_new(MemoryRegion, 1);
     MemoryRegion *system_memory = get_system_memory();
 
-    flash_size = (512 * 1024) * 1024;
-    sram_size  = (64 * 1024) * 1024;
+    flash_size = 512 * 1024;
+    sram_size  = 32 * 1024;
 
     ///////////////////////////////////////////////////
     /* Flash programming is done via the SCU, so pretend it is ROM.  */
     memory_region_init_ram(flash, NULL, "lpc1768.flash", flash_size,
                            &error_fatal);
-    // memory_region_set_readonly(flash, true);
+    memory_region_set_readonly(flash, true);
     memory_region_add_subregion(system_memory, 0, flash);
 
     memory_region_init_ram(sram, NULL, "lpc1768.sram", sram_size,
                            &error_fatal);
-    memory_region_add_subregion(system_memory, 0x20000000, sram);
+    memory_region_add_subregion(system_memory, 0x10000000, sram);
 
     nvic = qdev_create(NULL, TYPE_ARMV7M);
     qdev_prop_set_uint32(nvic, "num-irq", NUM_IRQ_LINES);
