@@ -116,6 +116,9 @@ static uint64_t lpc1768_uart_read(void *opaque, hwaddr offset,
     case UART_LSR:
         retval = s->lsr | UART_LSR_TX_EMPTY;
         break;
+    case UART_LCR:
+        retval = s->lcr;
+        break;
     default:
         cpu_abort(CPU(ARM_CPU(first_cpu)), "%s: Bad offset 0x%x\n", __func__,
 			(int)offset);
