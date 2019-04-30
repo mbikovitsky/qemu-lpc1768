@@ -7,6 +7,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/timer.h"
 #include "hw/sysbus.h"
 #include "hw/devices.h"
 #include "hw/arm/arm.h"
@@ -45,6 +46,9 @@
 #define SYSC_USBIntSt
 #define SYSC_DMAREQSEL
 #define SYSC_CLKOUTCFG  (0x1C8)
+
+#define INTERNAL_RC_FREQUENCY (4 * 1000000)
+#define MAIN_OSC_FREQUENCY (100 * 1000000)
 
 #define TYPE_LPC1768_SYSC "lpc1768,sysc"
 #define LPC1768_SYSC(obj) \
@@ -89,15 +93,18 @@ static uint32_t get_pll0(Lpc1768SyscState *s)
 
 static void update_system_clock(Lpc1768SyscState *s)
 {
+    int clock_scale_hz = 0;
+
     if ((s->clk_select & 3) != SRCSEL_INTERNAL_CR) {
         printf("unsupported clock source :%s\n",
                get_clock_name(s));
         printf("assuming that the system clock is at 100MHz\n");
-        system_clock_scale = 100000000;
+        system_clock_scale = NANOSECONDS_PER_SECOND / MAIN_OSC_FREQUENCY;
         return;
     }
 
-    system_clock_scale = get_pll0(s) / ((s->clk_config & 0xff) + 1);
+    clock_scale_hz = get_pll0(s) / ((s->clk_config & 0xff) + 1);
+    system_clock_scale = NANOSECONDS_PER_SECOND / clock_scale_hz;
 }
 
 static uint64_t lpc1768_sysc_read(void *opaque, hwaddr offset,
@@ -171,7 +178,7 @@ static void lpc1768_sysc_reset(DeviceState *d)
 }
 
 static Property lpc1768_sysc_properties[] = {
-    DEFINE_PROP_UINT32("main_clk_hz", Lpc1768SyscState, main_clk_hz, 4000000),
+    DEFINE_PROP_UINT32("main_clk_hz", Lpc1768SyscState, main_clk_hz, INTERNAL_RC_FREQUENCY),
     DEFINE_PROP_END_OF_LIST(),
 };
 static void lpc1768_sysc_class_init(ObjectClass *klass, void *data)
