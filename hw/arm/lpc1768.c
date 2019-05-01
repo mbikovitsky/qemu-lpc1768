@@ -2,6 +2,7 @@
  * NXP LPC1768 Board support
  *
  * Copyright (c) 2011,2012 Masashi YOKOTA <yktmss@gmail.com>
+ * Copyright (c) 2019 Michael Bikovitsky <biko@bikodbg.com>
  *
  * This code is licensed under the GPL v2.
  */

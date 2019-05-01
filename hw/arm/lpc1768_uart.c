@@ -2,6 +2,7 @@
  * NXP LPC1768 UART support
  *
  * Copyright (c) 2011 Masashi YOKOTA <yktmss@gmail.com>
+ * Copyright (c) 2019 Michael Bikovitsky <biko@bikodbg.com>
  *
  * This code is licensed under the GPL.
  */
