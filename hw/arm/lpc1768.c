@@ -25,6 +25,23 @@ void do_sys_reset(void *opaque, int n, int level)
     }
 }
 
+static void create_uart(DeviceState * nvic)
+{
+    DeviceState * dev = NULL;
+    SysBusDevice * s = NULL;
+
+    dev = qdev_create(NULL, "lpc1768,uart");
+    s = SYS_BUS_DEVICE(dev);
+
+    qdev_prop_set_chr(dev, "chardev", serial_hd(0));
+
+    qdev_init_nofail(dev);
+
+    sysbus_mmio_map(s, 0, 0x4000C000);
+
+    sysbus_connect_irq(s, 0, qdev_get_gpio_in(nvic, 5)); // 21 - (16) = 5
+}
+
 static void lpc1768_common_init(const char *kernel_filename, const char *cpu_model)
 {
     DeviceState *nvic;
@@ -74,12 +91,7 @@ static void lpc1768_common_init(const char *kernel_filename, const char *cpu_mod
     memory_region_init_ram(pin_connect_block, NULL, "lpc1768.pin-connect-block", 0x4000, &error_fatal);
     memory_region_add_subregion(system_memory, 0x4002C000, pin_connect_block);
 
-    DeviceState *dev = qdev_create(NULL, "lpc1768,uart");
-    SysBusDevice *s = SYS_BUS_DEVICE(dev);
-    qdev_prop_set_chr(dev, "chardev", serial_hd(0));
-    qdev_init_nofail(dev);
-    sysbus_mmio_map(s, 0, 0x4000C000);
-    sysbus_connect_irq(s, 0, qdev_get_gpio_in(nvic, 5)); // 21 - (16) = 5
+    create_uart(nvic);
 
     sysbus_create_simple("lpc1768,sysc", 0x400FC000, NULL);
 
