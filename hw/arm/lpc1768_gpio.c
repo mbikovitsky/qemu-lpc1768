@@ -56,7 +56,8 @@ static Lpc1768GpioPort * decode_address(Lpc1768GpioState * state,
                                         hwaddr address,
                                         unsigned size,
                                         PORT_FIELD * port_field,
-                                        size_t * byte_offset)
+                                        size_t * byte_offset,
+                                        size_t * port_number)
 {
     Lpc1768GpioPort * port = NULL;
     size_t port_index = 0;
@@ -106,6 +107,10 @@ static Lpc1768GpioPort * decode_address(Lpc1768GpioState * state,
     port = &state->ports[port_index];
     *port_field = field_type;
     *byte_offset = field_offset;
+    if (NULL != port_number)
+    {
+        *port_number = port_index;
+    }
 
 cleanup:
     return port;
@@ -119,7 +124,7 @@ static uint64_t lpc1768_gpio_port_read(void * opaque, hwaddr address, unsigned s
     PORT_FIELD port_field = RESERVED1;
     size_t byte_offset = 0;
 
-    port = decode_address(state, address, size, &port_field, &byte_offset);
+    port = decode_address(state, address, size, &port_field, &byte_offset, NULL);
     if (NULL == port)
     {
         qemu_log_mask(LOG_GUEST_ERROR,
@@ -162,15 +167,46 @@ cleanup:
     return result;
 }
 
+static void update_pins(Lpc1768GpioState * state, size_t port_number, uint32_t previous_pins)
+{
+    Lpc1768GpioPort * port = NULL;
+    uint32_t diff = 0;
+    uint32_t pin_index = 0;
+    qemu_irq interrupt = NULL;
+
+    port = &state->ports[port_number];
+
+    diff = previous_pins ^ port->fiopin;
+    while (0 != diff)
+    {
+        pin_index = __builtin_ctz(diff);
+        interrupt = state->out_lines[port_number * sizeof(uint32_t) * 8 + pin_index];
+        if (NULL != interrupt)
+        {
+            if (port->fiopin & (1 << pin_index))
+            {
+                qemu_irq_raise(interrupt);
+            }
+            else
+            {
+                qemu_irq_lower(interrupt);
+            }
+        }
+
+        diff &= ~(1 << pin_index);
+    }
+}
+
 static void lpc1768_gpio_port_write(void * opaque, hwaddr address, uint64_t value, unsigned size)
 {
     Lpc1768GpioState * state = opaque;
     Lpc1768GpioPort * port = NULL;
     PORT_FIELD port_field = RESERVED1;
     size_t byte_offset = 0;
+    size_t port_number = 0;
     uint32_t new_value = (uint32_t)value;
 
-    port = decode_address(state, address, size, &port_field, &byte_offset);
+    port = decode_address(state, address, size, &port_field, &byte_offset, &port_number);
     if (NULL == port)
     {
         qemu_log_mask(LOG_GUEST_ERROR,
@@ -210,8 +246,12 @@ static void lpc1768_gpio_port_write(void * opaque, hwaddr address, uint64_t valu
     /* FALLTHRU */
     case FIOPIN:
     {
-        uint32_t masked_field = (port->fiopin) & (port->fiomask);
-        uint32_t masked_new_field = set_field(port->fiopin, new_value, byte_offset, size) & (~(port->fiomask));
+        uint32_t masked_field = 0;
+        uint32_t masked_new_field = 0;
+        uint32_t previous_pins = 0;
+
+        masked_field = (port->fiopin) & (port->fiomask);
+        masked_new_field = set_field(port->fiopin, new_value, byte_offset, size) & (~(port->fiomask));
 
         // masked_field has the original field value, with all the pins
         // that *should be* modified zeroed-out.
@@ -225,7 +265,10 @@ static void lpc1768_gpio_port_write(void * opaque, hwaddr address, uint64_t valu
         // - Pins that should be modified have 0 in masked_field and
         //   the new value in maked_new_field, so the result has the new value.
 
+        previous_pins = port->fiopin;
         port->fiopin = masked_field | masked_new_field;
+
+        update_pins(state, port_number, previous_pins);
 
         break;
     }
@@ -265,6 +308,8 @@ static void lpc1768_gpio_instance_init(Object * object)
                           "lpc1768,gpio,port_config",
                           0x4000);
     sysbus_init_mmio(sysbus, &state->port_config);
+
+    qdev_init_gpio_out(DEVICE(state), state->out_lines, ARRAY_SIZE(state->out_lines));
 }
 
 static void lpc1768_gpio_class_init(ObjectClass * klass, void * data)

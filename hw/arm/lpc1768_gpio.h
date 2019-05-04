@@ -11,11 +11,14 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
+#include "hw/irq.h"
 
 
 #define TYPE_LPC1768_GPIO "lpc1768,gpio"
 #define LPC1768_GPIO(obj) \
     OBJECT_CHECK(Lpc1768GpioState, (obj), TYPE_LPC1768_GPIO)
+
+#define NUM_LINES (sizeof(uint32_t) * 8 * 5)
 
 
 typedef struct Lpc1768GpioPort
@@ -33,6 +36,7 @@ typedef struct Lpc1768GpioState
     // Public
     Lpc1768GpioPort ports[5];
     MemoryRegion port_config;
+    qemu_irq out_lines[NUM_LINES];
 } Lpc1768GpioState;
 
 
