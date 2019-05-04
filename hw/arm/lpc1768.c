@@ -27,6 +27,18 @@ void do_sys_reset(void *opaque, int n, int level)
     }
 }
 
+static void led_handler(void *opaque, int n, int level)
+{
+    if (level)
+    {
+        printf("[*] LED ON\n");
+    }
+    else
+    {
+        printf("[*] LED OFF\n");
+    }
+}
+
 static void create_uart(DeviceState * nvic)
 {
     DeviceState * dev = NULL;
@@ -44,7 +56,7 @@ static void create_uart(DeviceState * nvic)
     sysbus_connect_irq(s, 0, qdev_get_gpio_in(nvic, 5)); // 21 - (16) = 5
 }
 
-static void create_gpio(void)
+static DeviceState * create_gpio(void)
 {
     DeviceState * dev = NULL;
     SysBusDevice * s = NULL;
@@ -56,6 +68,8 @@ static void create_gpio(void)
 
     // Port Config memory
     sysbus_mmio_map(s, 0, 0x2009C000);
+
+    return dev;
 }
 
 static void lpc1768_common_init(const char *kernel_filename, const char *cpu_model)
@@ -111,7 +125,10 @@ static void lpc1768_common_init(const char *kernel_filename, const char *cpu_mod
 
     sysbus_create_simple("lpc1768,sysc", 0x400FC000, NULL);
 
-    create_gpio();
+    DeviceState * gpio = create_gpio();
+
+    // Connect LED1
+    qdev_connect_gpio_out(gpio, 50, qemu_allocate_irq(&led_handler, NULL, 0));
 
     armv7m_load_kernel(ARM_CPU(first_cpu), kernel_filename, flash_size);
 }
