@@ -246,12 +246,18 @@ static void lpc1768_gpio_port_write(void * opaque, hwaddr address, uint64_t valu
     /* FALLTHRU */
     case FIOPIN:
     {
+        uint32_t mask = 0;
         uint32_t masked_field = 0;
         uint32_t masked_new_field = 0;
         uint32_t previous_pins = 0;
 
-        masked_field = (port->fiopin) & (port->fiomask);
-        masked_new_field = set_field(port->fiopin, new_value, byte_offset, size) & (~(port->fiomask));
+        // 1s are pins that are not masked and marked as output, therefore
+        // can be modified. 0s are pins that are either masked or
+        // marked as input, and therefore should not be modified.
+        mask = (~port->fiomask) & port->fiodir;
+
+        masked_field = (port->fiopin) & (~mask);
+        masked_new_field = set_field(port->fiopin, new_value, byte_offset, size) & (mask);
 
         // masked_field has the original field value, with all the pins
         // that *should be* modified zeroed-out.
